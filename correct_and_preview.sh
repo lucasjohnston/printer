@@ -27,16 +27,19 @@ process_image() {
   
   # Step 1: Create corrected image (preserve purples and warm tones)
   if [ "$TRANSPARENT" = true ]; then
-    # For transparent mode, preserve alpha channel
+    # For transparent mode, apply color corrections only to non-transparent pixels
     magick "$INPUT" \
-      -channel RGB \
-      -channel G -evaluate multiply 0.80 +channel \
-      -channel R -evaluate multiply 1.01 +channel \
-      -channel B -evaluate multiply 0.97 +channel \
-      -modulate 98,94,104 \
-      -brightness-contrast -3x-11 \
-      -level 0%,101%,1.04 \
-      +channel \
+      \( +clone -alpha extract \) \
+      \( -clone 0 -alpha off \
+         -channel G -evaluate multiply 0.80 +channel \
+         -channel R -evaluate multiply 1.01 +channel \
+         -channel B -evaluate multiply 0.97 +channel \
+         -modulate 98,94,104 \
+         -brightness-contrast -3x-11 \
+         -level 0%,101%,1.04 \) \
+      -delete 0 \
+      -swap 0,1 \
+      -compose Copy_Opacity -composite \
       -define png:color-type=6 \
       "${BASE}_FOR_PRINTING.${EXT}"
   else
@@ -60,16 +63,19 @@ process_image() {
   if [ "$SKIP_PREVIEW" = false ]; then
     # Step 2: Simulate how the corrected image will print
     if [ "$TRANSPARENT" = true ]; then
-      # For transparent mode, preserve alpha channel in preview
+      # For transparent mode, apply preview corrections only to non-transparent pixels
       magick "${BASE}_FOR_PRINTING.${EXT}" \
-        -channel RGB \
-        -channel G -evaluate multiply 1.215 +channel \
-        -channel R -evaluate multiply 0.945 +channel \
-        -channel B -evaluate multiply 1.08 +channel \
-        -modulate 101,116,93 \
-        -brightness-contrast 2x12 \
-        -level 0%,96%,0.94 \
-        +channel \
+        \( +clone -alpha extract \) \
+        \( -clone 0 -alpha off \
+           -channel G -evaluate multiply 1.215 +channel \
+           -channel R -evaluate multiply 0.945 +channel \
+           -channel B -evaluate multiply 1.08 +channel \
+           -modulate 101,116,93 \
+           -brightness-contrast 2x12 \
+           -level 0%,96%,0.94 \) \
+        -delete 0 \
+        -swap 0,1 \
+        -compose Copy_Opacity -composite \
         -define png:color-type=6 \
         "${BASE}_PREVIEW_AFTER_CORRECTION.${EXT}"
     else
@@ -252,7 +258,7 @@ if [[ "${ARGS[0]}" == --* ]]; then
     for file in "${PROCESSED_FILES[@]}"; do
       INPUT="$file"
       BASE="${INPUT%.*}"
-      local EXT="jpg"
+      EXT="jpg"
       if [ "$TRANSPARENT" = true ]; then
         EXT="png"
       fi
@@ -287,7 +293,7 @@ else
     echo "Removing print file..."
     INPUT="${ARGS[0]}"
     BASE="${INPUT%.*}"
-    local EXT="jpg"
+    EXT="jpg"
     if [ "$TRANSPARENT" = true ]; then
       EXT="png"
     fi
