@@ -7,6 +7,8 @@ SKIP_PREVIEW=false
 SKIP_PRINT=false
 # Global variable for remove source files mode
 RM_SOURCE=false
+# Global variable for transparent PNG mode
+TRANSPARENT=false
 # Array to track successfully processed files
 PROCESSED_FILES=()
 
@@ -14,18 +16,40 @@ PROCESSED_FILES=()
 process_image() {
   local INPUT="$1"
   local BASE="${INPUT%.*}"
+  local EXT="jpg"
+  
+  # Use PNG extension if transparent mode is enabled
+  if [ "$TRANSPARENT" = true ]; then
+    EXT="png"
+  fi
   
   echo "Processing: $INPUT"
   
   # Step 1: Create corrected image (preserve purples and warm tones)
-  magick "$INPUT" \
-    -channel G -evaluate multiply 0.80 +channel \
-    -channel R -evaluate multiply 1.01 +channel \
-    -channel B -evaluate multiply 0.97 +channel \
-    -modulate 98,94,104 \
-    -brightness-contrast -3x-11 \
-    -level 0%,101%,1.04 \
-    "${BASE}_FOR_PRINTING.jpg"
+  if [ "$TRANSPARENT" = true ]; then
+    # For transparent mode, preserve alpha channel
+    magick "$INPUT" \
+      -channel RGB \
+      -channel G -evaluate multiply 0.80 +channel \
+      -channel R -evaluate multiply 1.01 +channel \
+      -channel B -evaluate multiply 0.97 +channel \
+      -modulate 98,94,104 \
+      -brightness-contrast -3x-11 \
+      -level 0%,101%,1.04 \
+      +channel \
+      -define png:color-type=6 \
+      "${BASE}_FOR_PRINTING.${EXT}"
+  else
+    # Standard JPEG output
+    magick "$INPUT" \
+      -channel G -evaluate multiply 0.80 +channel \
+      -channel R -evaluate multiply 1.01 +channel \
+      -channel B -evaluate multiply 0.97 +channel \
+      -modulate 98,94,104 \
+      -brightness-contrast -3x-11 \
+      -level 0%,101%,1.04 \
+      "${BASE}_FOR_PRINTING.${EXT}"
+  fi
   
   # Check if the first magick command was successful
   if [ $? -ne 0 ]; then
@@ -34,15 +58,31 @@ process_image() {
   fi
   
   if [ "$SKIP_PREVIEW" = false ]; then
-    # Step 2: Simulate how the corrected image will print (unchanged)
-    magick "${BASE}_FOR_PRINTING.jpg" \
-      -channel G -evaluate multiply 1.215 +channel \
-      -channel R -evaluate multiply 0.945 +channel \
-      -channel B -evaluate multiply 1.08 +channel \
-      -modulate 101,116,93 \
-      -brightness-contrast 2x12 \
-      -level 0%,96%,0.94 \
-      "${BASE}_PREVIEW_AFTER_CORRECTION.jpg"
+    # Step 2: Simulate how the corrected image will print
+    if [ "$TRANSPARENT" = true ]; then
+      # For transparent mode, preserve alpha channel in preview
+      magick "${BASE}_FOR_PRINTING.${EXT}" \
+        -channel RGB \
+        -channel G -evaluate multiply 1.215 +channel \
+        -channel R -evaluate multiply 0.945 +channel \
+        -channel B -evaluate multiply 1.08 +channel \
+        -modulate 101,116,93 \
+        -brightness-contrast 2x12 \
+        -level 0%,96%,0.94 \
+        +channel \
+        -define png:color-type=6 \
+        "${BASE}_PREVIEW_AFTER_CORRECTION.${EXT}"
+    else
+      # Standard JPEG preview
+      magick "${BASE}_FOR_PRINTING.${EXT}" \
+        -channel G -evaluate multiply 1.215 +channel \
+        -channel R -evaluate multiply 0.945 +channel \
+        -channel B -evaluate multiply 1.08 +channel \
+        -modulate 101,116,93 \
+        -brightness-contrast 2x12 \
+        -level 0%,96%,0.94 \
+        "${BASE}_PREVIEW_AFTER_CORRECTION.${EXT}"
+    fi
     
     # Check if the second magick command was successful
     if [ $? -ne 0 ]; then
@@ -51,11 +91,11 @@ process_image() {
     fi
     
     echo "Created:"
-    echo "  ${BASE}_FOR_PRINTING.jpg - Send THIS to your printer"
-    echo "  ${BASE}_PREVIEW_AFTER_CORRECTION.jpg - Preview of final print"
+    echo "  ${BASE}_FOR_PRINTING.${EXT} - Send THIS to your printer"
+    echo "  ${BASE}_PREVIEW_AFTER_CORRECTION.${EXT} - Preview of final print"
   else
     echo "Created:"
-    echo "  ${BASE}_FOR_PRINTING.jpg - Send THIS to your printer"
+    echo "  ${BASE}_FOR_PRINTING.${EXT} - Send THIS to your printer"
   fi
   echo ""
   
@@ -71,13 +111,16 @@ if [ $# -eq 0 ]; then
   echo "Options:"
   echo "  --skip-preview  Skip preview generation, only create print files"
   echo "  --skip-print    Skip print generation, only create preview files"
-  echo "  -R, --rm-src  Remove source files after successful processing"
+  echo "  -R, --rm-src    Remove source files after successful processing"
+  echo "  --transparent   Generate PNG output with alpha channel (only works with PNG input)"
   echo "Examples:"
   echo "  $0 image.jpg"
   echo "  $0 --skip-preview image.jpg"
   echo "  $0 -R image.jpg"
   echo "  $0 --png --jpg --jpeg"
   echo "  $0 --skip-preview --rm-src --png --jpg"
+  echo "  $0 --transparent image.png"
+  echo "  $0 --transparent --png"
   exit 1
 fi
 
@@ -93,6 +136,9 @@ for arg in "$@"; do
       ;;
     -R|--rm-src)
       RM_SOURCE=true
+      ;;
+    --transparent)
+      TRANSPARENT=true
       ;;
     *)
       ARGS+=("$arg")
@@ -112,6 +158,33 @@ if [ "$SKIP_PREVIEW" = true ] && [ "$SKIP_PRINT" = true ]; then
   echo "Error: Cannot use both --skip-preview and --skip-print together."
   echo "Choose one or the other based on what you want to generate."
   exit 1
+fi
+
+# Validate transparent flag usage
+if [ "$TRANSPARENT" = true ]; then
+  # Check if processing by extension
+  if [[ "${ARGS[0]}" == --* ]]; then
+    # Check if --png is included
+    has_png=false
+    for arg in "${ARGS[@]}"; do
+      if [[ "$arg" == "--png" ]]; then
+        has_png=true
+        break
+      fi
+    done
+    if [ "$has_png" = false ]; then
+      echo "Error: --transparent flag only works with PNG files."
+      echo "Please use --png or specify a .png file directly."
+      exit 1
+    fi
+  else
+    # Check if single file is PNG
+    if [[ ! "${ARGS[0]}" =~ \.[Pp][Nn][Gg]$ ]]; then
+      echo "Error: --transparent flag only works with PNG files."
+      echo "The input file must have a .png extension."
+      exit 1
+    fi
+  fi
 fi
 
 # Process based on arguments
@@ -152,6 +225,11 @@ if [[ "${ARGS[0]}" == --* ]]; then
   # Process each file
   FAILED=false
   for file in "${FILES[@]}"; do
+    # Skip non-PNG files if transparent mode is enabled
+    if [ "$TRANSPARENT" = true ] && [[ ! "$file" =~ \.[Pp][Nn][Gg]$ ]]; then
+      echo "Skipping non-PNG file in transparent mode: $file"
+      continue
+    fi
     if ! process_image "$file"; then
       FAILED=true
     fi
@@ -174,8 +252,12 @@ if [[ "${ARGS[0]}" == --* ]]; then
     for file in "${PROCESSED_FILES[@]}"; do
       INPUT="$file"
       BASE="${INPUT%.*}"
-      rm -f "${BASE}_FOR_PRINTING.jpg"
-      echo "Removed: ${BASE}_FOR_PRINTING.jpg"
+      local EXT="jpg"
+      if [ "$TRANSPARENT" = true ]; then
+        EXT="png"
+      fi
+      rm -f "${BASE}_FOR_PRINTING.${EXT}"
+      echo "Removed: ${BASE}_FOR_PRINTING.${EXT}"
     done
   fi
   
@@ -205,7 +287,11 @@ else
     echo "Removing print file..."
     INPUT="${ARGS[0]}"
     BASE="${INPUT%.*}"
-    rm -f "${BASE}_FOR_PRINTING.jpg"
-    echo "Removed: ${BASE}_FOR_PRINTING.jpg"
+    local EXT="jpg"
+    if [ "$TRANSPARENT" = true ]; then
+      EXT="png"
+    fi
+    rm -f "${BASE}_FOR_PRINTING.${EXT}"
+    echo "Removed: ${BASE}_FOR_PRINTING.${EXT}"
   fi
 fi
