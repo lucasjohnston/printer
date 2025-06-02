@@ -19,27 +19,32 @@ This script helps photographers and designers prepare images for printing by:
 ./correct_and_preview.sh --png --jpg --jpeg
 
 # Skip preview generation (only create print files)
-./correct_and_preview.sh -S image.jpg
-./correct_and_preview.sh --skip --png --jpg
+./correct_and_preview.sh --skip-preview image.jpg
+./correct_and_preview.sh --skip-preview --png --jpg
+
+# Skip print file generation (only create preview files)
+./correct_and_preview.sh --skip-print image.jpg
+./correct_and_preview.sh --skip-print --png --jpg
 
 # Remove source files after successful processing
 ./correct_and_preview.sh -R image.jpg
 ./correct_and_preview.sh --rm-src --png --jpg
 
 # Combine options
-./correct_and_preview.sh -S -R --png --jpg --jpeg
+./correct_and_preview.sh --skip-preview -R --png --jpg --jpeg
 ```
 
 ## Options
 
-- `-S, --skip`: Skip preview generation, only create print files
+- `--skip-preview`: Skip preview generation, only create print files
+- `--skip-print`: Skip print file generation, only create preview files
 - `-R, --rm-src`: Remove source files after successful processing (only if all operations succeed)
 
 ## Output
 
 For each input image, the script creates:
-- `{filename}_FOR_PRINTING.jpg`: The color-corrected version to send to your printer
-- `{filename}_PREVIEW_AFTER_CORRECTION.jpg`: A preview of how the print will look (unless `-S` is used)
+- `{filename}_FOR_PRINTING.jpg`: The color-corrected version to send to your printer (unless `--skip-print` is used)
+- `{filename}_PREVIEW_AFTER_CORRECTION.jpg`: A preview of how the print will look (unless `--skip-preview` is used)
 
 ## Requirements
 

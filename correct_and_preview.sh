@@ -3,6 +3,8 @@
 
 # Global variable for skip preview mode
 SKIP_PREVIEW=false
+# Global variable for skip print mode
+SKIP_PRINT=false
 # Global variable for remove source files mode
 RM_SOURCE=false
 # Array to track successfully processed files
@@ -15,25 +17,34 @@ process_image() {
   
   echo "Processing: $INPUT"
   
-  # Step 1: Create corrected image (preserve purples and warm tones)
-  magick "$INPUT" \
-    -channel G -evaluate multiply 0.80 +channel \
-    -channel R -evaluate multiply 1.01 +channel \
-    -channel B -evaluate multiply 0.97 +channel \
-    -modulate 98,94,104 \
-    -brightness-contrast -3x-11 \
-    -level 0%,101%,1.04 \
-    "${BASE}_FOR_PRINTING.jpg"
-  
-  # Check if the first magick command was successful
-  if [ $? -ne 0 ]; then
-    echo "Error: Failed to create corrected image for $INPUT"
-    return 1
+  # Step 1: Create corrected image only if not skipping print
+  if [ "$SKIP_PRINT" = false ]; then
+    magick "$INPUT" \
+      -channel G -evaluate multiply 0.80 +channel \
+      -channel R -evaluate multiply 1.01 +channel \
+      -channel B -evaluate multiply 0.97 +channel \
+      -modulate 98,94,104 \
+      -brightness-contrast -3x-11 \
+      -level 0%,101%,1.04 \
+      "${BASE}_FOR_PRINTING.jpg"
+    
+    # Check if the first magick command was successful
+    if [ $? -ne 0 ]; then
+      echo "Error: Failed to create corrected image for $INPUT"
+      return 1
+    fi
   fi
   
+  # Step 2: Create preview only if not skipping preview
   if [ "$SKIP_PREVIEW" = false ]; then
-    # Step 2: Simulate how the corrected image will print (unchanged)
-    magick "${BASE}_FOR_PRINTING.jpg" \
+    # If we're skipping print, simulate directly from original
+    local SOURCE_IMG="$INPUT"
+    if [ "$SKIP_PRINT" = false ]; then
+      SOURCE_IMG="${BASE}_FOR_PRINTING.jpg"
+    fi
+    
+    # Simulate how the corrected image will print
+    magick "$SOURCE_IMG" \
       -channel G -evaluate multiply 1.215 +channel \
       -channel R -evaluate multiply 0.945 +channel \
       -channel B -evaluate multiply 1.08 +channel \
@@ -47,13 +58,15 @@ process_image() {
       echo "Error: Failed to create preview image for $INPUT"
       return 1
     fi
-    
-    echo "Created:"
+  fi
+  
+  # Output what was created
+  echo "Created:"
+  if [ "$SKIP_PRINT" = false ]; then
     echo "  ${BASE}_FOR_PRINTING.jpg - Send THIS to your printer"
+  fi
+  if [ "$SKIP_PREVIEW" = false ]; then
     echo "  ${BASE}_PREVIEW_AFTER_CORRECTION.jpg - Preview of final print"
-  else
-    echo "Created:"
-    echo "  ${BASE}_FOR_PRINTING.jpg - Send THIS to your printer"
   fi
   echo ""
   
@@ -66,14 +79,15 @@ process_image() {
 if [ $# -eq 0 ]; then
   echo "Usage: $0 [options] <image_file> or $0 [options] --<extension> [--<extension>...]"
   echo "Options:"
-  echo "  -S, --skip    Skip preview generation, only create print files"
+  echo "  --skip-preview  Skip preview generation, only create print files"
+  echo "  --skip-print    Skip print generation, only create preview files"
   echo "  -R, --rm-src  Remove source files after successful processing"
   echo "Examples:"
   echo "  $0 image.jpg"
-  echo "  $0 -S image.jpg"
+  echo "  $0 --skip-preview image.jpg"
   echo "  $0 -R image.jpg"
   echo "  $0 --png --jpg --jpeg"
-  echo "  $0 --skip --rm-src --png --jpg"
+  echo "  $0 --skip-preview --rm-src --png --jpg"
   exit 1
 fi
 
@@ -81,8 +95,11 @@ fi
 ARGS=()
 for arg in "$@"; do
   case "$arg" in
-    -S|--skip)
+    --skip-preview)
       SKIP_PREVIEW=true
+      ;;
+    --skip-print)
+      SKIP_PRINT=true
       ;;
     -R|--rm-src)
       RM_SOURCE=true
@@ -97,6 +114,13 @@ done
 if [ ${#ARGS[@]} -eq 0 ]; then
   echo "Error: No file or extension specified."
   echo "Usage: $0 [options] <image_file> or $0 [options] --<extension> [--<extension>...]"
+  exit 1
+fi
+
+# Check if both skip options are enabled
+if [ "$SKIP_PREVIEW" = true ] && [ "$SKIP_PRINT" = true ]; then
+  echo "Error: Cannot use both --skip-preview and --skip-print together."
+  echo "Choose one or the other based on what you want to generate."
   exit 1
 fi
 
@@ -126,6 +150,9 @@ if [[ "${ARGS[0]}" == --* ]]; then
   printf '%s\n' "${FILES[@]}"
   if [ "$SKIP_PREVIEW" = true ]; then
     echo "Preview generation: SKIPPED"
+  fi
+  if [ "$SKIP_PRINT" = true ]; then
+    echo "Print file generation: SKIPPED"
   fi
   if [ "$RM_SOURCE" = true ]; then
     echo "Remove source files: ENABLED (only after successful processing)"
