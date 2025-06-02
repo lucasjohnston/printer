@@ -17,34 +17,25 @@ process_image() {
   
   echo "Processing: $INPUT"
   
-  # Step 1: Create corrected image only if not skipping print
-  if [ "$SKIP_PRINT" = false ]; then
-    magick "$INPUT" \
-      -channel G -evaluate multiply 0.80 +channel \
-      -channel R -evaluate multiply 1.01 +channel \
-      -channel B -evaluate multiply 0.97 +channel \
-      -modulate 98,94,104 \
-      -brightness-contrast -3x-11 \
-      -level 0%,101%,1.04 \
-      "${BASE}_FOR_PRINTING.jpg"
-    
-    # Check if the first magick command was successful
-    if [ $? -ne 0 ]; then
-      echo "Error: Failed to create corrected image for $INPUT"
-      return 1
-    fi
+  # Step 1: Create corrected image (preserve purples and warm tones)
+  magick "$INPUT" \
+    -channel G -evaluate multiply 0.80 +channel \
+    -channel R -evaluate multiply 1.01 +channel \
+    -channel B -evaluate multiply 0.97 +channel \
+    -modulate 98,94,104 \
+    -brightness-contrast -3x-11 \
+    -level 0%,101%,1.04 \
+    "${BASE}_FOR_PRINTING.jpg"
+  
+  # Check if the first magick command was successful
+  if [ $? -ne 0 ]; then
+    echo "Error: Failed to create corrected image for $INPUT"
+    return 1
   fi
   
-  # Step 2: Create preview only if not skipping preview
   if [ "$SKIP_PREVIEW" = false ]; then
-    # If we're skipping print, simulate directly from original
-    local SOURCE_IMG="$INPUT"
-    if [ "$SKIP_PRINT" = false ]; then
-      SOURCE_IMG="${BASE}_FOR_PRINTING.jpg"
-    fi
-    
-    # Simulate how the corrected image will print
-    magick "$SOURCE_IMG" \
+    # Step 2: Simulate how the corrected image will print (unchanged)
+    magick "${BASE}_FOR_PRINTING.jpg" \
       -channel G -evaluate multiply 1.215 +channel \
       -channel R -evaluate multiply 0.945 +channel \
       -channel B -evaluate multiply 1.08 +channel \
@@ -58,15 +49,13 @@ process_image() {
       echo "Error: Failed to create preview image for $INPUT"
       return 1
     fi
-  fi
-  
-  # Output what was created
-  echo "Created:"
-  if [ "$SKIP_PRINT" = false ]; then
+    
+    echo "Created:"
     echo "  ${BASE}_FOR_PRINTING.jpg - Send THIS to your printer"
-  fi
-  if [ "$SKIP_PREVIEW" = false ]; then
     echo "  ${BASE}_PREVIEW_AFTER_CORRECTION.jpg - Preview of final print"
+  else
+    echo "Created:"
+    echo "  ${BASE}_FOR_PRINTING.jpg - Send THIS to your printer"
   fi
   echo ""
   
@@ -74,6 +63,7 @@ process_image() {
   PROCESSED_FILES+=("$INPUT")
   return 0
 }
+
 
 # Check if arguments are provided
 if [ $# -eq 0 ]; then
@@ -152,7 +142,7 @@ if [[ "${ARGS[0]}" == --* ]]; then
     echo "Preview generation: SKIPPED"
   fi
   if [ "$SKIP_PRINT" = true ]; then
-    echo "Print file generation: SKIPPED"
+    echo "Skip print files: ENABLED (removed after successful processing)"
   fi
   if [ "$RM_SOURCE" = true ]; then
     echo "Remove source files: ENABLED (only after successful processing)"
@@ -177,6 +167,17 @@ if [[ "${ARGS[0]}" == --* ]]; then
   elif [ "$RM_SOURCE" = true ] && [ "$FAILED" = true ]; then
     echo "Warning: Some files failed to process. No source files were removed."
   fi
+
+  # Delete print files if requested regardless of outcome
+  if [ "$SKIP_PRINT" = true ]; then
+    echo "Removing print files..."
+    for file in "${PROCESSED_FILES[@]}"; do
+      INPUT="$file"
+      BASE="${INPUT%.*}"
+      rm -f "${BASE}_FOR_PRINTING.jpg"
+      echo "Removed: ${BASE}_FOR_PRINTING.jpg"
+    done
+  fi
   
 else
   # Process single file
@@ -197,5 +198,14 @@ else
       echo "Error: Processing failed. Source file was not removed."
     fi
     exit 1
+  fi
+
+  # Delete print file only if requested
+  if [ "$SKIP_PRINT" = true ]; then
+    echo "Removing print file..."
+    INPUT="${ARGS[0]}"
+    BASE="${INPUT%.*}"
+    rm -f "${BASE}_FOR_PRINTING.jpg"
+    echo "Removed: ${BASE}_FOR_PRINTING.jpg"
   fi
 fi
